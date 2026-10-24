@@ -1,62 +1,115 @@
+const { PermissionFlagsBits } = require('discord.js');
 
-const OWNER_ID = '1533306874513068093';
+function isOwner(member) {
+  if (!member || !member.guild) return false;
 
-function isOwner(userId) {
-  return userId === OWNER_ID;
+  return member.id === member.guild.ownerId;
 }
 
-function getConfigRoleIds(guildConfig) {
-  return guildConfig?.permissions?.configRoleIds || [];
-}
-
-function getAllowedSections(guildConfig, roleIds) {
-  const permissions = guildConfig?.permissions?.roles || {};
-
-  const allowed = new Set();
-
-  for (const roleId of roleIds) {
-    const sections = permissions[roleId];
-
-    if (Array.isArray(sections)) {
-      sections.forEach(section => allowed.add(section));
-    }
+function hasRole(member, roleIds = []) {
+  if (!member || !member.roles || !Array.isArray(roleIds)) {
+    return false;
   }
 
-  return [...allowed];
+  return roleIds.some(roleId => member.roles.cache.has(roleId));
 }
 
-function canAccessConfig(interaction, guildConfig) {
-  if (isOwner(interaction.user.id)) return true;
+function canAccessConfig(member, config) {
+  if (!member || !member.guild || !config) return false;
 
-  if (!interaction.guild || !interaction.member) return false;
+  // O dono configura o próprio servidor.
+  if (isOwner(member)) return true;
 
-  const roleIds = getConfigRoleIds(guildConfig);
+  // Administradores do servidor também podem acessar.
+  if (
+    member.permissions.has(PermissionFlagsBits.Administrator)
+  ) {
+    return true;
+  }
 
-  const memberRoleIds = interaction.member.roles?.cache
-    ? [...interaction.member.roles.cache.keys()]
-    : [];
+  // Outros membros precisam de um cargo autorizado.
+  const roleIds = config.permissions?.configRoleIds || [];
 
-  return roleIds.some(roleId => memberRoleIds.includes(roleId));
+  return hasRole(member, roleIds);
 }
 
-function canAccessSection(interaction, guildConfig, section) {
-  if (isOwner(interaction.user.id)) return true;
+function canModerate(member, config) {
+  if (!member || !member.guild || !config) return false;
 
-  if (!canAccessConfig(interaction, guildConfig)) return false;
+  if (isOwner(member)) return true;
 
-  const memberRoleIds = interaction.member.roles?.cache
-    ? [...interaction.member.roles.cache.keys()]
-    : [];
+  if (
+    member.permissions.has(PermissionFlagsBits.Administrator)
+  ) {
+    return true;
+  }
 
-  const allowed = getAllowedSections(guildConfig, memberRoleIds);
+  const roleIds = config.permissions?.moderationRoleIds || [];
 
-  return allowed.includes('*') || allowed.includes(section);
+  return hasRole(member, roleIds);
+}
+
+function canManageSecurity(member, config) {
+  if (!member || !member.guild || !config) return false;
+
+  if (isOwner(member)) return true;
+
+  if (
+    member.permissions.has(PermissionFlagsBits.Administrator)
+  ) {
+    return true;
+  }
+
+  const roleIds = config.permissions?.securityRoleIds || [];
+
+  return hasRole(member, roleIds);
+}
+
+function canManageTickets(member, config) {
+  if (!member || !member.guild || !config) return false;
+
+  if (isOwner(member)) return true;
+
+  if (
+    member.permissions.has(PermissionFlagsBits.Administrator)
+  ) {
+    return true;
+  }
+
+  const roleIds = config.permissions?.supportRoleIds || [];
+
+  return hasRole(member, roleIds);
+}
+
+function canAccessSection(member, config, section) {
+  if (!member || !member.guild || !config || !section) {
+    return false;
+  }
+
+  if (isOwner(member)) return true;
+
+  if (
+    member.permissions.has(PermissionFlagsBits.Administrator)
+  ) {
+    return true;
+  }
+
+  const roles = config.permissions?.roles || {};
+  const allowedRoleIds = Object.entries(roles)
+    .filter(([, sections]) => {
+      return Array.isArray(sections) && sections.includes(section);
+    })
+    .map(([roleId]) => roleId);
+
+  return hasRole(member, allowedRoleIds);
 }
 
 module.exports = {
-  OWNER_ID,
   isOwner,
+  hasRole,
   canAccessConfig,
-  canAccessSection,
-  getAllowedSections
+  canModerate,
+  canManageSecurity,
+  canManageTickets,
+  canAccessSection
 };
