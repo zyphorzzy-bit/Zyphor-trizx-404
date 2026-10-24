@@ -1,81 +1,70 @@
-
-const { getGuildConfig, updateGuildConfig } = require('../utils/storage');
+const { EmbedBuilder, MessageFlags } = require('discord.js');
 const { canAccessConfig } = require('../utils/permissions');
-const emojis = require('../utils/emojis');
-const logger = require('../utils/logger');
+const { getGuildConfig, updateGuildConfig } = require('../utils/storage');
 
-async function handleModal(interaction, client) {
+async function handleModal(interaction) {
   if (!interaction.isModalSubmit()) return false;
-  if (!interaction.customId.startsWith('zyphor:')) return false;
 
-  try {
-    if (!interaction.guild) {
+  const id = interaction.customId;
+
+  if (!id.startsWith('zyphor:')) return false;
+
+  if (!interaction.guild) {
+    await interaction.reply({
+      content: 'Este formulário só pode ser usado dentro de um servidor.',
+      flags: MessageFlags.Ephemeral
+    });
+    return true;
+  }
+
+  const guildId = interaction.guild.id;
+  const config = getGuildConfig(guildId);
+
+  if (!canAccessConfig(interaction.member, config)) {
+    await interaction.reply({
+      content: 'Você não tem permissão para alterar esta configuração.',
+      flags: MessageFlags.Ephemeral
+    });
+    return true;
+  }
+
+  if (id === 'zyphor:config:prefix') {
+    const prefix = interaction.fields
+      .getTextInputValue('prefix')
+      .trim();
+
+    const allowedPrefixes = ['!', '.', '?', '+', '×'];
+
+    if (!allowedPrefixes.includes(prefix)) {
       await interaction.reply({
-        content: 'Use este formulário dentro de um servidor.',
-        ephemeral: true
+        content: 'Prefixo inválido. Escolha: ! . ? + ou ×',
+        flags: MessageFlags.Ephemeral
       });
       return true;
     }
 
-    const config = getGuildConfig(interaction.guild.id);
-
-    // Revalidar as permissões ao enviar o formulário.
-    if (!canAccessConfig(interaction, config)) {
-      await interaction.reply({
-        content: `${emojis.negative} Você não tem permissão para alterar estas configurações.`,
-        ephemeral: true
-      });
-      return true;
-    }
-
-    const [, section, action] = interaction.customId.split(':');
-
-    if (section === 'config' && action === 'prefix') {
-      const prefix = interaction.fields.getTextInputValue('prefix').trim();
-      const allowedPrefixes = ['!', '.', '?', '+', '×'];
-
-      if (!allowedPrefixes.includes(prefix)) {
-        await interaction.reply({
-          content: 'Prefixo inválido. Escolha: !, ., ?, + ou ×.',
-          ephemeral: true
-        });
-        return true;
-      }
-
-      updateGuildConfig(interaction.guild.id, { prefix });
-
-      await interaction.reply({
-        content: `${emojis.positive} Prefixo salvo: \`${prefix}\``,
-        ephemeral: true
-      });
-
-      logger.info('Prefixo atualizado por formulário', {
-        guildId: interaction.guild.id,
-        userId: interaction.user.id,
-        prefix
-      });
-
-      return true;
-    }
+    updateGuildConfig(guildId, { prefix });
 
     await interaction.reply({
-      content: 'Este formulário ainda não está implementado.',
-      ephemeral: true
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0x242424)
+          .setTitle('Prefixo atualizado')
+          .setDescription(`O prefixo agora é \`${prefix}\`.`)
+          .setFooter({ text: 'Zyphor Bot • Configuração' })
+      ],
+      flags: MessageFlags.Ephemeral
     });
 
     return true;
-  } catch (error) {
-    logger.error('Erro ao processar formulário', error);
-
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({
-        content: 'Não foi possível processar esse formulário.',
-        ephemeral: true
-      }).catch(() => {});
-    }
-
-    return true;
   }
+
+  await interaction.reply({
+    content: 'Este formulário ainda não está configurado.',
+    flags: MessageFlags.Ephemeral
+  });
+
+  return true;
 }
 
 module.exports = { handleModal };
