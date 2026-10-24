@@ -5,33 +5,64 @@ const path = require('path');
 const LOG_DIR = path.join(__dirname, '..', 'logs');
 const LOG_FILE = path.join(LOG_DIR, 'zyphor.log');
 
-function ensureLogDirectory() {
-  if (!fs.existsSync(LOG_DIR)) {
-    fs.mkdirSync(LOG_DIR, { recursive: true });
+function ensureLogFile() {
+  try {
+    if (!fs.existsSync(LOG_DIR)) {
+      fs.mkdirSync(LOG_DIR, { recursive: true });
+    }
+
+    if (!fs.existsSync(LOG_FILE)) {
+      fs.writeFileSync(LOG_FILE, '', 'utf8');
+    }
+  } catch (error) {
+    console.error('[Zyphor Logger] Não foi possível preparar o arquivo de logs:', error.message);
   }
 }
 
 function writeLog(level, message, details = null) {
-  ensureLogDirectory();
-
   const timestamp = new Date().toISOString();
-  const extra = details
-    ? ` | ${details instanceof Error ? details.stack || details.message : JSON.stringify(details)}`
+  const detailText = details
+    ? ` | ${typeof details === 'string' ? details : JSON.stringify(details)}`
     : '';
 
-  const line = `[${timestamp}] [${level.toUpperCase()}] ${message}${extra}\n`;
+  const line = `[${timestamp}] [${String(level).toUpperCase()}] ${String(message)}${detailText}`;
+
+  console.log(line);
 
   try {
-    fs.appendFileSync(LOG_FILE, line, 'utf8');
+    ensureLogFile();
+    fs.appendFileSync(LOG_FILE, `${line}\n`, 'utf8');
   } catch (error) {
-    console.error('Não foi possível salvar o log:', error.message);
+    console.error('[Zyphor Logger] Erro ao salvar log:', error.message);
   }
+}
 
-  console.log(line.trim());
+function info(message, details = null) {
+  writeLog('INFO', message, details);
+}
+
+function success(message, details = null) {
+  writeLog('SUCCESS', message, details);
+}
+
+function warn(message, details = null) {
+  writeLog('WARN', message, details);
+}
+
+function error(message, details = null) {
+  writeLog('ERROR', message, details);
+}
+
+function debug(message, details = null) {
+  if (process.env.NODE_ENV === 'development') {
+    writeLog('DEBUG', message, details);
+  }
 }
 
 module.exports = {
-  info: (message, details) => writeLog('info', message, details),
-  warn: (message, details) => writeLog('warn', message, details),
-  error: (message, details) => writeLog('error', message, details)
+  info,
+  success,
+  warn,
+  error,
+  debug
 };
