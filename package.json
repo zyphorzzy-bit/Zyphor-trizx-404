@@ -1,1 +1,15 @@
 
+{
+  "name": "zyphor-bot",
+  "version": "1.0.0",
+  "description": "Bot multifuncional da Zyphor",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.22.1",
+    "dotenv": "^16.6.1",
+    "openai": "^5.20.0"
+  }
+}
