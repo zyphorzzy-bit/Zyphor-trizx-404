@@ -3,19 +3,19 @@ const {
   MessageFlags
 } = require('discord.js');
 
-const {
-  canAccessConfig
-} = require('../utils/permissions');
-
-const {
-  getGuildConfig,
-  updateGuildConfig
-} = require('../utils/storage');
+const { canAccessConfig } = require('../utils/permissions');
+const { getGuildConfig, updateGuildConfig } = require('../utils/storage');
 
 const PREFIXES = ['!', '.', '?', '+', '×'];
 
 async function handleSelectMenu(interaction) {
-  if (!interaction.isStringSelectMenu()) return false;
+  if (
+    !interaction.isStringSelectMenu() &&
+    !interaction.isChannelSelectMenu() &&
+    !interaction.isRoleSelectMenu()
+  ) {
+    return false;
+  }
 
   const id = interaction.customId;
 
@@ -34,13 +34,49 @@ async function handleSelectMenu(interaction) {
 
   if (!canAccessConfig(interaction.member, config)) {
     await interaction.reply({
-      content: 'Você não tem permissão para usar este painel.',
+      content: 'Você não tem permissão para alterar esta configuração.',
       flags: MessageFlags.Ephemeral
     });
     return true;
   }
 
-  if (id === 'zyphor:prefix:choose') {
+  // Seleção de canal de Logs de Segurança
+  if (id === 'zyphor:logs:security-channel') {
+    const channel = interaction.channels.first();
+
+    if (!channel || !channel.isTextBased()) {
+      await interaction.reply({
+        content: 'Selecione um canal de texto válido.',
+        flags: MessageFlags.Ephemeral
+      });
+      return true;
+    }
+
+    updateGuildConfig(guildId, {
+      logs: {
+        ...config.logs,
+        securityChannelId: channel.id
+      }
+    });
+
+    await interaction.update({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0x242424)
+          .setTitle('🛡️ Logs de Segurança')
+          .setDescription(
+            `Canal configurado: ${channel}\n\nOs sistemas poderão usar este canal para registrar alertas de segurança.`
+          )
+          .setFooter({ text: 'Zyphor Bot • Configuração' })
+      ],
+      components: []
+    });
+
+    return true;
+  }
+
+  // Seleção de prefixo
+  if (id === 'zyphor:prefix:choose' && interaction.isStringSelectMenu()) {
     const prefix = interaction.values[0];
 
     if (!PREFIXES.includes(prefix)) {
@@ -51,21 +87,15 @@ async function handleSelectMenu(interaction) {
       return true;
     }
 
-    updateGuildConfig(guildId, {
-      prefix
-    });
+    updateGuildConfig(guildId, { prefix });
 
     await interaction.update({
       embeds: [
         new EmbedBuilder()
           .setColor(0x242424)
           .setTitle('Prefixo atualizado')
-          .setDescription(
-            `O prefixo deste servidor agora é \`${prefix}\`.`
-          )
-          .setFooter({
-            text: 'Zyphor Bot • Configuração'
-          })
+          .setDescription(`O prefixo agora é \`${prefix}\`.`)
+          .setFooter({ text: 'Zyphor Bot • Configuração' })
       ],
       components: []
     });
@@ -73,49 +103,42 @@ async function handleSelectMenu(interaction) {
     return true;
   }
 
-  if (id === 'zyphor:config:category') {
+  // Menu principal de categorias
+  if (id === 'zyphor:config:category' && interaction.isStringSelectMenu()) {
     const category = interaction.values[0];
 
     const categories = {
-      moderation: {
-        title: 'Moderação',
-        description:
-          'Configure punições, avisos e ferramentas de moderação.'
-      },
       security: {
         title: 'Zyphor Security',
-        description:
-          'Configure Anti-Spam, Anti-Raid, Anti-Bots, Anti-GIF, Anti-Grief, Anti-Nuke e outras proteções.'
+        description: 'Configure as proteções contra spam, raids, bots, GIFs e ações destrutivas.'
       },
-      welcome: {
-        title: 'Boas-vindas',
-        description:
-          'Configure mensagens de entrada, saída e cargos automáticos.'
-      },
-      prefix: {
-        title: 'Prefixo',
-        description:
-          `Prefixo atual: \`${config.prefix || '!'}\`. Use o comando /prefixo para alterá-lo.`
-      },
-      permissions: {
-        title: 'Permissões',
-        description:
-          'Configure os cargos autorizados a acessar os painéis e sistemas.'
-      },
-      ai: {
-        title: 'Inteligência artificial',
-        description:
-          'Configure os recursos de IA e os canais autorizados.'
+      moderation: {
+        title: 'Moderação',
+        description: 'Configure as ferramentas de moderação do servidor.'
       },
       logs: {
         title: 'Logs e segurança',
-        description:
-          'Configure os canais de registro de mensagens, moderação e segurança.'
+        description: 'Selecione o canal onde serão enviados os registros.'
+      },
+      welcome: {
+        title: 'Boas-vindas',
+        description: 'Configure mensagens de entrada e saída.'
+      },
+      permissions: {
+        title: 'Permissões',
+        description: 'Configure os cargos autorizados a usar os painéis.'
       },
       tickets: {
         title: 'Tickets',
-        description:
-          'Configure categorias, cargos de suporte e painéis de atendimento.'
+        description: 'Configure o sistema de atendimento.'
+      },
+      ai: {
+        title: 'Inteligência artificial',
+        description: 'Configure os recursos de IA.'
+      },
+      prefix: {
+        title: 'Prefixo',
+        description: `Prefixo atual: \`${config.prefix || '!'}\`.`
       }
     };
 
@@ -129,17 +152,51 @@ async function handleSelectMenu(interaction) {
       return true;
     }
 
+    const components = [];
+
+    if (category === 'logs') {
+      const { ChannelSelectMenuBuilder, ChannelType, ActionRowBuilder } = require('discord.js');
+
+      const channelMenu = new ChannelSelectMenuBuilder()
+        .setCustomId('zyphor:logs:security-channel')
+        .setPlaceholder('Escolha o canal de Logs de Segurança')
+        .setChannelTypes(ChannelType.GuildText)
+        .setMinValues(1)
+        .setMaxValues(1);
+
+      components.push(
+        new ActionRowBuilder().addComponents(channelMenu)
+      );
+    }
+
     await interaction.update({
       embeds: [
         new EmbedBuilder()
           .setColor(0x242424)
           .setTitle(`Zyphor • ${selected.title}`)
           .setDescription(selected.description)
-          .setFooter({
-            text: 'Zyphor Bot • Painel de configuração'
-          })
+          .setFooter({ text: 'Zyphor Bot • Configuração' })
       ],
-      components: []
+      components
+    });
+
+    return true;
+  }
+
+  // Seleção de cargos autorizados para configuração
+  if (id === 'zyphor:permissions:config-roles' && interaction.isRoleSelectMenu()) {
+    const roleIds = interaction.roles.map(role => role.id);
+
+    updateGuildConfig(guildId, {
+      permissions: {
+        ...config.permissions,
+        configRoleIds: roleIds
+      }
+    });
+
+    await interaction.reply({
+      content: 'Cargos autorizados para configuração atualizados.',
+      flags: MessageFlags.Ephemeral
     });
 
     return true;
@@ -153,6 +210,4 @@ async function handleSelectMenu(interaction) {
   return true;
 }
 
-module.exports = {
-  handleSelectMenu
-};
+module.exports = { handleSelectMenu };
