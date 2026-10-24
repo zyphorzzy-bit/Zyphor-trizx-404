@@ -1,13 +1,18 @@
 
 require('dotenv').config();
+
 const {
   Client,
   GatewayIntentBits,
   Collection,
   Events
 } = require('discord.js');
-const fs = require('fs');
-const path = require('path');
+
+const { loadCommands } = require('./handlers/commandHandler');
+const { handleButton } = require('./handlers/buttonHandler');
+const { handleSelectMenu } = require('./handlers/selectMenuHandler');
+const { handleModal } = require('./handlers/modalHandler');
+const logger = require('./utils/logger');
 
 const client = new Client({
   intents: [
@@ -20,22 +25,23 @@ const client = new Client({
 });
 
 client.commands = new Collection();
-client.configPath = path.join(__dirname, 'data.json');
 
-const commandsPath = path.join(__dirname, 'commands');
-
-if (fs.existsSync(commandsPath)) {
-  for (const file of fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'))) {
-    const command = require(path.join(commandsPath, file));
-
-    if (command.data && command.execute) {
-      client.commands.set(command.data.name, command);
-    }
-  }
-}
+loadCommands(client);
 
 client.once(Events.ClientReady, readyClient => {
-  console.log(`Zyphor Bot online: ${readyClient.user.tag}`);
+  logger.info(`Zyphor Bot online como ${readyClient.user.tag}`);
+
+  readyClient.user.setPresence({
+    activities: [
+      {
+        name: 'Zyphor | /config',
+        type: 3
+      }
+    ],
+    status: 'online'
+  });
+
+  console.log('Zyphor Bot está pronto!');
 });
 
 client.on(Events.InteractionCreate, async interaction => {
@@ -46,26 +52,52 @@ client.on(Events.InteractionCreate, async interaction => {
       if (command) {
         await command.execute(interaction, client);
       }
+
+      return;
+    }
+
+    if (interaction.isButton()) {
+      const handled = await handleButton(interaction, client);
+      if (handled) return;
+    }
+
+    if (
+      interaction.isStringSelectMenu()
+    ) {
+      const handled = await handleSelectMenu(interaction, client);
+      if (handled) return;
+    }
+
+    if (interaction.isModalSubmit()) {
+      const handled = await handleModal(interaction, client);
+      if (handled) return;
     }
   } catch (error) {
-    console.error('Erro na interação:', error);
+    logger.error('Erro ao processar interação', error);
 
-    const message = {
-      content: 'Ocorreu um erro ao executar essa função.',
+    const response = {
+      content: 'Ocorreu um erro ao executar essa ação.',
       ephemeral: true
     };
 
     if (interaction.replied || interaction.deferred) {
-      await interaction.followUp(message).catch(() => {});
+      await interaction.followUp(response).catch(() => {});
     } else {
-      await interaction.reply(message).catch(() => {});
+      await interaction.reply(response).catch(() => {});
     }
   }
 });
 
+client.on(Events.Error, error => {
+  logger.error('Erro do cliente Discord', error);
+});
+
 if (!process.env.DISCORD_TOKEN) {
-  console.error('Configure DISCORD_TOKEN nas variáveis de ambiente.');
+  logger.error('DISCORD_TOKEN não foi configurado nas variáveis de ambiente.');
   process.exit(1);
 }
 
-client.login(process.env.DISCORD_TOKEN);
+client.login(process.env.DISCORD_TOKEN).catch(error => {
+  logger.error('Não foi possível conectar o bot ao Discord', error);
+  process.exitCode = 1;
+});
