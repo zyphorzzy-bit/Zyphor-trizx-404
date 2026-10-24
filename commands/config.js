@@ -1,14 +1,64 @@
-
 const {
   SlashCommandBuilder,
   EmbedBuilder,
   ActionRowBuilder,
-  StringSelectMenuBuilder
+  StringSelectMenuBuilder,
+  MessageFlags
 } = require('discord.js');
 
+const { canAccessConfig } = require('../utils/permissions');
 const { getGuildConfig } = require('../utils/storage');
-const { isOwner, canAccessConfig } = require('../utils/permissions');
-const emojis = require('../utils/emojis');
+
+const categories = [
+  {
+    label: 'Zyphor Security',
+    value: 'security',
+    description: 'Anti-spam, Anti-bots, Anti-GIF, Anti-raid e Anti-nuke',
+    emoji: '🛡️'
+  },
+  {
+    label: 'Moderação',
+    value: 'moderation',
+    description: 'Banimentos, expulsões, castigos e avisos',
+    emoji: '🔨'
+  },
+  {
+    label: 'Logs e segurança',
+    value: 'logs',
+    description: 'Escolha os canais de registros do servidor',
+    emoji: '📋'
+  },
+  {
+    label: 'Boas-vindas',
+    value: 'welcome',
+    description: 'Mensagens de entrada, saída e cargos automáticos',
+    emoji: '👋'
+  },
+  {
+    label: 'Permissões',
+    value: 'permissions',
+    description: 'Configure os cargos autorizados',
+    emoji: '🔐'
+  },
+  {
+    label: 'Tickets',
+    value: 'tickets',
+    description: 'Painéis, categorias e equipe de atendimento',
+    emoji: '🎫'
+  },
+  {
+    label: 'Inteligência artificial',
+    value: 'ai',
+    description: 'Configure os recursos de IA do bot',
+    emoji: '🤖'
+  },
+  {
+    label: 'Prefixo',
+    value: 'prefix',
+    description: 'Escolha o prefixo dos comandos tradicionais',
+    emoji: '⚙️'
+  }
+];
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -19,82 +69,49 @@ module.exports = {
     if (!interaction.guild) {
       return interaction.reply({
         content: 'Use este comando dentro de um servidor.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
     const config = getGuildConfig(interaction.guild.id);
 
-    if (!canAccessConfig(interaction, config)) {
+    if (!canAccessConfig(interaction.member, config)) {
       return interaction.reply({
-        content: `${emojis.negative} Você não tem permissão para acessar este painel.`,
-        ephemeral: true
+        content: 'Você não tem permissão para abrir este painel.',
+        flags: MessageFlags.Ephemeral
       });
     }
 
-    const owner = isOwner(interaction.user.id);
-
     const embed = new EmbedBuilder()
-      .setColor(0x181818)
-      .setTitle(`${emojis.config} Zyphor Bot — Configurações`)
+      .setColor(0x242424)
+      .setTitle('ZYPhor • Central de configuração')
       .setDescription(
-        `Bem-vindo ao painel de configuração do **Zyphor Bot**!\n\n` +
-        `${emojis.online} **Servidor:** ${interaction.guild.name}\n` +
-        `${emojis.document} **Prefixo atual:** \`${config.prefix || '!'}\`\n` +
-        `${emojis.security} **Acesso:** ${owner ? 'Proprietário' : 'Administrador autorizado'}\n\n` +
-        'Selecione abaixo a categoria que deseja configurar.'
+        [
+          'Configure os sistemas do seu servidor em um só lugar.',
+          '',
+          '🛡️ **Segurança:** filtros, proteções e alertas.',
+          '🔨 **Moderação:** ferramentas para a equipe.',
+          '📋 **Logs:** registros organizados.',
+          '🎫 **Tickets:** atendimento personalizado.',
+          '',
+          'Selecione uma categoria no menu abaixo.'
+        ].join('\n')
       )
-      .setFooter({ text: 'Zyphor Bot • Painel de controle' })
-      .setTimestamp();
+      .setFooter({
+        text: `Zyphor Bot • ${interaction.guild.name}`
+      });
 
     const menu = new StringSelectMenuBuilder()
       .setCustomId('zyphor:config:category')
       .setPlaceholder('Selecione uma categoria...')
-      .addOptions(
-        {
-          label: 'Moderação',
-          description: 'Banimentos, expulsões, avisos e timeout',
-          value: 'moderation',
-          emoji: '🛡️'
-        },
-        {
-          label: 'Logs e segurança',
-          description: 'Eventos e registros do servidor',
-          value: 'logs',
-          emoji: '📋'
-        },
-        {
-          label: 'Boas-vindas',
-          description: 'Mensagens de entrada e saída',
-          value: 'welcome',
-          emoji: '👋'
-        },
-        {
-          label: 'Prefixo',
-          description: 'Escolher o prefixo dos comandos',
-          value: 'prefix',
-          emoji: '⌨️'
-        },
-        {
-          label: 'Permissões',
-          description: 'Configurar quem acessa o painel',
-          value: 'permissions',
-          emoji: '🔐'
-        },
-        {
-          label: 'Inteligência artificial',
-          description: 'Preparar as funções de IA',
-          value: 'ai',
-          emoji: '🤖'
-        }
-      );
+      .addOptions(categories);
 
     const row = new ActionRowBuilder().addComponents(menu);
 
     return interaction.reply({
       embeds: [embed],
       components: [row],
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
 };
