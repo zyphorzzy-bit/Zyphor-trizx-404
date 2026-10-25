@@ -45,7 +45,9 @@ function hasCommandCooldown(message, command, cooldownMs = 3000) {
   const now = Date.now();
   const lastUsed = commandCooldowns.get(key) || 0;
 
-  if (now - lastUsed < cooldownMs) return true;
+  if (now - lastUsed < cooldownMs) {
+    return true;
+  }
 
   commandCooldowns.set(key, now);
   return false;
@@ -53,6 +55,7 @@ function hasCommandCooldown(message, command, cooldownMs = 3000) {
 
 async function handlePrefixCommand(message, config) {
   const prefix = config.prefix || '!';
+
   if (!message.content.startsWith(prefix)) return false;
 
   const content = message.content.slice(prefix.length).trim();
@@ -88,10 +91,17 @@ async function handlePrefixCommand(message, config) {
 
   const reason = args.slice(1).join(' ') || 'Não informado';
 
-  // A função de moderação atual espera uma interação do Discord.
-  // Não passamos uma mensagem para ela, pois isso seria incompatível.
+  const result = await moderateMember(
+    message,
+    command,
+    target,
+    reason
+  );
+
   await message.reply(
-    'Este comando de moderação por prefixo ainda precisa ser integrado. Use o comando de moderação disponível no painel.'
+    result.success
+      ? `✅ ${result.message}`
+      : `❌ ${result.message}`
   ).catch(() => {});
 
   return true;
@@ -100,9 +110,9 @@ async function handlePrefixCommand(message, config) {
 async function handleSecurity(message, config) {
   if (!config.security?.enabled || message.author.bot) return;
 
-  if (checkSpam(message, config)) {
-    const antiSpam = config.security.antiSpam;
+  const antiSpam = config.security.antiSpam;
 
+  if (checkSpam(message, config)) {
     if (['delete', 'delete_warn'].includes(antiSpam.action)) {
       await message.delete().catch(() => {});
     }
@@ -119,9 +129,15 @@ async function handleSecurity(message, config) {
 
   const antiLinks = config.security?.antiLinks;
 
-  if (antiLinks?.enabled && /https?:\/\/\S+/i.test(message.content)) {
+  if (
+    antiLinks?.enabled &&
+    /https?:\/\/\S+/i.test(message.content)
+  ) {
     const allowedDomains = antiLinks.allowedDomains || [];
     const urls = message.content.match(/https?:\/\/\S+/gi) || [];
+
+    const hasInvite =
+      /discord(?:\.gg|\.com\/invite)\/[a-z0-9-]+/i.test(message.content);
 
     const allAllowed = urls.every(url => {
       try {
@@ -132,19 +148,21 @@ async function handleSecurity(message, config) {
 
           return normalized &&
             (hostname === normalized ||
-              hostname.endsWith(`.${normalized}`));
+             hostname.endsWith(`.${normalized}`));
         });
       } catch {
         return false;
       }
     });
 
-    const hasInvite =
-      /discord(?:\.gg|\.com\/invite)\/[a-z0-9-]+/i.test(message.content);
+    const inviteOnly = urls.every(url =>
+      /^(https?:\/\/)?(www\.)?(discord\.gg\/|discord\.com\/invite\/)/i.test(url)
+    );
 
-    const inviteAllowed = antiLinks.allowInvites && hasInvite;
+    const linksAllowed =
+      allAllowed || (antiLinks.allowInvites && hasInvite && inviteOnly);
 
-    if (!allAllowed && !inviteAllowed) {
+    if (!linksAllowed) {
       if (['delete', 'delete_warn'].includes(antiLinks.action)) {
         await message.delete().catch(() => {});
       }
@@ -163,7 +181,7 @@ async function handleSecurity(message, config) {
 module.exports = {
   name: Events.MessageCreate,
 
-  async execute(message, client) {
+  async execute(message) {
     try {
       if (!message.guild || message.author.bot) return;
 
@@ -196,7 +214,10 @@ module.exports = {
         }
       }
     } catch (error) {
-      logger.error('Erro no evento MessageCreate', error.message);
+      logger.error(
+        'Erro no evento MessageCreate',
+        error.message || error
+      );
     }
   }
 };
