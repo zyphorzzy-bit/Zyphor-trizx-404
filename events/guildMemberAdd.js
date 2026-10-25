@@ -1,6 +1,5 @@
 
 const { Events, EmbedBuilder } = require('discord.js');
-
 const { getGuildConfig } = require('../utils/storage');
 const { sendSecurityLog } = require('../systems/securityLogs');
 const { sendWelcome } = require('../systems/welcome');
@@ -12,22 +11,23 @@ module.exports = {
 
   async execute(member) {
     try {
-      if (!member.guild) return;
+      if (!member?.guild || !member.user) return;
 
-      const config = getGuildConfig(member.guild.id);
+      const guild = member.guild;
+      const config = getGuildConfig(guild.id);
 
-      // 1. Registrar a entrada do membro.
+      // Registrar a entrada do membro.
       const memberChannelId = config.logs?.memberChannelId;
 
       if (memberChannelId) {
-        const channel = await member.guild.channels
+        const channel = await guild.channels
           .fetch(memberChannelId)
           .catch(() => null);
 
-        if (channel?.isTextBased()) {
+        if (channel?.isTextBased() && channel.send) {
           const embed = new EmbedBuilder()
             .setColor(0x57F287)
-            .setTitle('📥 Novo membro')
+            .setTitle('Novo membro')
             .setDescription(`${member.user.tag} entrou no servidor.`)
             .addFields(
               {
@@ -48,42 +48,36 @@ module.exports = {
         }
       }
 
-      // 2. Alertar sobre a entrada de outro bot.
-      if (member.user.bot && config.security?.antiBots?.enabled) {
-        await sendSecurityLog(member.guild, {
-          title: '🤖 Novo bot detectado',
-          description: `O bot ${member.user.tag} entrou no servidor.`,
-          type: 'warning',
-          user: member.user,
-          target: member.user.tag,
-          fields: [
-            {
-              name: 'Ação automática',
-              value: 'Alerta enviado à equipe. Nenhuma punição automática foi aplicada.'
-            }
-          ]
-        });
-      }
-
-      // 3. Aplicar cargos automáticos apenas a membros humanos.
-      if (!member.user.bot) {
-        try {
-          await assignAutoRoles(member);
-        } catch (error) {
-          logger.error('Erro ao atribuir cargos automáticos', error.message);
+      // Alertar a equipe quando outro bot entrar.
+      if (member.user.bot) {
+        if (config.security?.antiBots?.enabled) {
+          await sendSecurityLog(guild, {
+            title: 'Novo bot detectado',
+            description: `O bot ${member.user.tag} entrou no servidor.`,
+            type: 'warning',
+            user: member.user,
+            target: `${member.user.tag} (${member.id})`,
+            fields: [
+              {
+                name: 'Ação',
+                value: 'Alerta enviado. Nenhuma punição automática foi aplicada.'
+              }
+            ]
+          });
         }
 
-        // 4. Enviar a mensagem de boas-vindas.
-        try {
-          await sendWelcome(member);
-        } catch (error) {
-          logger.error('Erro ao enviar boas-vindas', error.message);
-        }
+        return;
       }
+
+      // Aplicar cargos automáticos a membros humanos.
+      await assignAutoRoles(member);
+
+      // Enviar boas-vindas.
+      await sendWelcome(member);
     } catch (error) {
       logger.error(
         'Erro ao processar entrada de membro',
-        error.message
+        error.message || error
       );
     }
   }
