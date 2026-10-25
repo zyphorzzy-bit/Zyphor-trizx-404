@@ -1,22 +1,29 @@
+
+const { PermissionFlagsBits } = require('discord.js');
 const { getGuildConfig } = require('../utils/storage');
 const { sendSecurityLog } = require('./securityLogs');
+const logger = require('../utils/logger');
 
 async function assignAutoRoles(member) {
   try {
+    if (!member?.guild || !member.user || member.user.bot) {
+      return { success: false, message: 'Membro inválido.' };
+    }
+
     const config = getGuildConfig(member.guild.id);
     const autorole = config.autorole;
 
-    if (!autorole?.enabled || !Array.isArray(autorole.roleIds)) {
+    if (!autorole?.enabled) {
       return { success: false, message: 'Sistema de cargos automáticos desativado.' };
     }
 
-    if (autorole.roleIds.length === 0) {
+    if (!Array.isArray(autorole.roleIds) || autorole.roleIds.length === 0) {
       return { success: false, message: 'Nenhum cargo automático foi configurado.' };
     }
 
     const botMember = member.guild.members.me;
 
-    if (!botMember?.permissions.has('ManageRoles')) {
+    if (!botMember?.permissions.has(PermissionFlagsBits.ManageRoles)) {
       return { success: false, message: 'O bot não possui a permissão Gerenciar Cargos.' };
     }
 
@@ -42,7 +49,7 @@ async function assignAutoRoles(member) {
         await member.roles.add(role, 'Cargo automático configurado pelo Zyphor Bot');
         assigned.push(role.name);
       } catch (error) {
-        console.error(`[Zyphor Autorole] Não foi possível atribuir ${role.name}:`, error.message);
+        logger.error(`Não foi possível atribuir o cargo ${role.name}`, error.message);
         skipped.push(role.name);
       }
     }
@@ -64,7 +71,7 @@ async function assignAutoRoles(member) {
 
     return { success: true, assigned, skipped };
   } catch (error) {
-    console.error('[Zyphor Autorole] Erro:', error);
+    logger.error('Erro ao processar cargos automáticos', error.message);
     return { success: false, message: 'Erro ao processar os cargos automáticos.' };
   }
 }
