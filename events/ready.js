@@ -1,24 +1,33 @@
 
 const { Events, ActivityType } = require('discord.js');
 const logger = require('../utils/logger');
+const { updateBotStatus } = require('../systems/liveStatus');
 
 module.exports = {
   name: Events.ClientReady,
   once: true,
 
   async execute(client) {
-    logger.info(`Zyphor Bot online como ${client.user.tag}`);
+    try {
+      logger.success(`Zyphor Bot conectado como ${client.user.tag}`);
 
-    client.user.setPresence({
-      activities: [
-        {
-          name: 'Zyphor | /config',
-          type: ActivityType.Watching
-        }
-      ],
-      status: 'online'
-    });
+      await updateBotStatus(client);
 
-    console.log('Zyphor Bot está pronto para receber comandos!');
+      logger.info(
+        `Servidores conectados: ${client.guilds.cache.size}`
+      );
+    } catch (error) {
+      logger.error('Erro durante a inicialização do bot', error.message);
+
+      client.user.setPresence({
+        activities: [
+          {
+            name: 'Zyphor | /config',
+            type: ActivityType.Watching
+          }
+        ],
+        status: 'online'
+      });
+    }
   }
 };
