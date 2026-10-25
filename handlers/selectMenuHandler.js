@@ -1,25 +1,27 @@
+
+const { EmbedBuilder, MessageFlags } = require('discord.js');
 const {
-  EmbedBuilder,
-  MessageFlags
-} = require('discord.js');
-
-const { canAccessConfig } = require('../utils/permissions');
-const { getGuildConfig, updateGuildConfig } = require('../utils/storage');
-
-const PREFIXES = ['!', '.', '?', '+', '×'];
+  canAccessConfig
+} = require('../utils/permissions');
+const {
+  getGuildConfig,
+  updateGuildConfig
+} = require('../utils/storage');
+const logger = require('../utils/logger');
 
 async function handleSelectMenu(interaction) {
-  if (
-    !interaction.isStringSelectMenu() &&
-    !interaction.isChannelSelectMenu() &&
-    !interaction.isRoleSelectMenu()
-  ) {
+  const isSelectMenu =
+    interaction.isStringSelectMenu() ||
+    interaction.isChannelSelectMenu() ||
+    interaction.isRoleSelectMenu() ||
+    interaction.isUserSelectMenu() ||
+    interaction.isMentionableSelectMenu();
+
+  if (!isSelectMenu) return false;
+
+  if (!interaction.customId.startsWith('zyphor:')) {
     return false;
   }
-
-  const id = interaction.customId;
-
-  if (!id.startsWith('zyphor:')) return false;
 
   if (!interaction.guild) {
     await interaction.reply({
@@ -29,185 +31,167 @@ async function handleSelectMenu(interaction) {
     return true;
   }
 
-  const guildId = interaction.guild.id;
-  const config = getGuildConfig(guildId);
+  const config = getGuildConfig(interaction.guild.id);
 
   if (!canAccessConfig(interaction.member, config)) {
     await interaction.reply({
-      content: 'Você não tem permissão para alterar esta configuração.',
+      content: 'Você não tem permissão para usar este painel.',
       flags: MessageFlags.Ephemeral
     });
     return true;
   }
 
-  // Seleção de canal de Logs de Segurança
-  if (id === 'zyphor:logs:security-channel') {
-    const channel = interaction.channels.first();
+  try {
+    const id = interaction.customId;
 
-    if (!channel || !channel.isTextBased()) {
-      await interaction.reply({
-        content: 'Selecione um canal de texto válido.',
-        flags: MessageFlags.Ephemeral
+    // Seleção do canal de logs de segurança.
+    if (id === 'zyphor:logs:security-channel') {
+      const channel = interaction.channels.first();
+
+      if (!channel || !channel.isTextBased()) {
+        await interaction.reply({
+          content: 'Selecione um canal de texto válido.',
+          flags: MessageFlags.Ephemeral
+        });
+        return true;
+      }
+
+      updateGuildConfig(interaction.guild.id, {
+        logs: { securityChannelId: channel.id }
       });
+
+      await interaction.update({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0x242424)
+            .setTitle('🛡️ Logs de segurança')
+            .setDescription(
+              `Canal de logs configurado para ${channel}.`
+            )
+            .setFooter({ text: 'Zyphor Bot • Configurações' })
+        ],
+        components: []
+      });
+
       return true;
     }
 
-    updateGuildConfig(guildId, {
-      logs: {
-        ...config.logs,
-        securityChannelId: channel.id
+    // Seleção do prefixo.
+    if (id === 'zyphor:prefix:choose') {
+      const prefix = interaction.values[0];
+      const allowedPrefixes = ['!', '.', '?', '+', '×'];
+
+      if (!allowedPrefixes.includes(prefix)) {
+        await interaction.reply({
+          content: 'Esse prefixo não é permitido.',
+          flags: MessageFlags.Ephemeral
+        });
+        return true;
       }
-    });
 
-    await interaction.update({
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0x242424)
-          .setTitle('🛡️ Logs de Segurança')
-          .setDescription(
-            `Canal configurado: ${channel}\n\nOs sistemas poderão usar este canal para registrar alertas de segurança.`
-          )
-          .setFooter({ text: 'Zyphor Bot • Configuração' })
-      ],
-      components: []
-    });
+      updateGuildConfig(interaction.guild.id, { prefix });
 
-    return true;
-  }
-
-  // Seleção de prefixo
-  if (id === 'zyphor:prefix:choose' && interaction.isStringSelectMenu()) {
-    const prefix = interaction.values[0];
-
-    if (!PREFIXES.includes(prefix)) {
-      await interaction.reply({
-        content: 'Esse prefixo não é permitido.',
-        flags: MessageFlags.Ephemeral
+      await interaction.update({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0x242424)
+            .setTitle('Prefixo atualizado')
+            .setDescription(`O prefixo agora é \`${prefix}\`.`)
+        ],
+        components: []
       });
+
       return true;
     }
 
-    updateGuildConfig(guildId, { prefix });
+    // Seleção da categoria de configuração.
+    if (id === 'zyphor:config:category') {
+      const category = interaction.values[0];
 
-    await interaction.update({
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0x242424)
-          .setTitle('Prefixo atualizado')
-          .setDescription(`O prefixo agora é \`${prefix}\`.`)
-          .setFooter({ text: 'Zyphor Bot • Configuração' })
-      ],
-      components: []
-    });
+      const categories = {
+        security: 'Segurança',
+        moderation: 'Moderação',
+        logs: 'Logs',
+        welcome: 'Boas-vindas',
+        permissions: 'Permissões',
+        tickets: 'Tickets',
+        ai: 'Inteligência artificial',
+        prefix: 'Prefixo'
+      };
 
-    return true;
-  }
-
-  // Menu principal de categorias
-  if (id === 'zyphor:config:category' && interaction.isStringSelectMenu()) {
-    const category = interaction.values[0];
-
-    const categories = {
-      security: {
-        title: 'Zyphor Security',
-        description: 'Configure as proteções contra spam, raids, bots, GIFs e ações destrutivas.'
-      },
-      moderation: {
-        title: 'Moderação',
-        description: 'Configure as ferramentas de moderação do servidor.'
-      },
-      logs: {
-        title: 'Logs e segurança',
-        description: 'Selecione o canal onde serão enviados os registros.'
-      },
-      welcome: {
-        title: 'Boas-vindas',
-        description: 'Configure mensagens de entrada e saída.'
-      },
-      permissions: {
-        title: 'Permissões',
-        description: 'Configure os cargos autorizados a usar os painéis.'
-      },
-      tickets: {
-        title: 'Tickets',
-        description: 'Configure o sistema de atendimento.'
-      },
-      ai: {
-        title: 'Inteligência artificial',
-        description: 'Configure os recursos de IA.'
-      },
-      prefix: {
-        title: 'Prefixo',
-        description: `Prefixo atual: \`${config.prefix || '!'}\`.`
+      if (!categories[category]) {
+        await interaction.reply({
+          content: 'Categoria desconhecida.',
+          flags: MessageFlags.Ephemeral
+        });
+        return true;
       }
-    };
 
-    const selected = categories[category];
-
-    if (!selected) {
-      await interaction.reply({
-        content: 'Categoria inválida.',
-        flags: MessageFlags.Ephemeral
+      await interaction.update({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0x242424)
+            .setTitle(`Configuração • ${categories[category]}`)
+            .setDescription(
+              'Esta categoria foi selecionada. Os controles específicos serão adicionados ao painel.'
+            )
+            .setFooter({ text: 'Zyphor Bot • Configurações' })
+        ],
+        components: []
       });
+
       return true;
     }
 
-    const components = [];
+    // Seleção de cargos autorizados a acessar a configuração.
+    if (id === 'zyphor:permissions:config-roles') {
+      const roleIds = interaction.values;
 
-    if (category === 'logs') {
-      const { ChannelSelectMenuBuilder, ChannelType, ActionRowBuilder } = require('discord.js');
+      updateGuildConfig(interaction.guild.id, {
+        permissions: { configRoleIds: roleIds }
+      });
 
-      const channelMenu = new ChannelSelectMenuBuilder()
-        .setCustomId('zyphor:logs:security-channel')
-        .setPlaceholder('Escolha o canal de Logs de Segurança')
-        .setChannelTypes(ChannelType.GuildText)
-        .setMinValues(1)
-        .setMaxValues(1);
+      await interaction.update({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0x242424)
+            .setTitle('Permissões atualizadas')
+            .setDescription(
+              roleIds.length
+                ? `Foram autorizados ${roleIds.length} cargo(s).`
+                : 'A lista de cargos autorizados foi limpa.'
+            )
+        ],
+        components: []
+      });
 
-      components.push(
-        new ActionRowBuilder().addComponents(channelMenu)
-      );
+      return true;
     }
 
-    await interaction.update({
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0x242424)
-          .setTitle(`Zyphor • ${selected.title}`)
-          .setDescription(selected.description)
-          .setFooter({ text: 'Zyphor Bot • Configuração' })
-      ],
-      components
-    });
-
-    return true;
-  }
-
-  // Seleção de cargos autorizados para configuração
-  if (id === 'zyphor:permissions:config-roles' && interaction.isRoleSelectMenu()) {
-    const roleIds = interaction.roles.map(role => role.id);
-
-    updateGuildConfig(guildId, {
-      permissions: {
-        ...config.permissions,
-        configRoleIds: roleIds
-      }
-    });
+    logger.info(`Menu ainda não implementado: ${id}`);
 
     await interaction.reply({
-      content: 'Cargos autorizados para configuração atualizados.',
+      content: 'Esta opção ainda está sendo configurada.',
       flags: MessageFlags.Ephemeral
     });
 
     return true;
+  } catch (error) {
+    logger.error('Erro ao processar menu de seleção', error.message);
+
+    const response = {
+      content: 'Não foi possível salvar essa configuração.',
+      flags: MessageFlags.Ephemeral
+    };
+
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp(response).catch(() => {});
+    } else {
+      await interaction.reply(response).catch(() => {});
+    }
+
+    return true;
   }
-
-  await interaction.reply({
-    content: 'Esta opção ainda está sendo configurada.',
-    flags: MessageFlags.Ephemeral
-  });
-
-  return true;
 }
 
 module.exports = { handleSelectMenu };
