@@ -1,12 +1,14 @@
+
 const { EmbedBuilder } = require('discord.js');
 const { getGuildConfig } = require('../utils/storage');
+const logger = require('../utils/logger');
 
 function formatMessage(template, member) {
   return String(template || '')
-    .replaceAll('{user}', `${member.user}`)
+    .replaceAll('{user}', `<@${member.id}>`)
     .replaceAll('{username}', member.user.username)
     .replaceAll('{server}', member.guild.name)
-    .replaceAll('{count}', String(member.guild.memberCount));
+    .replaceAll('{memberCount}', String(member.guild.memberCount));
 }
 
 async function sendWelcome(member) {
@@ -14,13 +16,16 @@ async function sendWelcome(member) {
     const config = getGuildConfig(member.guild.id);
     const welcome = config.welcome;
 
-    if (!welcome?.enabled || !welcome.channelId) return false;
+    if (!welcome?.enabled || !welcome.channelId) return;
 
     const channel = await member.guild.channels
       .fetch(welcome.channelId)
       .catch(() => null);
 
-    if (!channel?.isTextBased() || !channel.send) return false;
+    if (!channel || !channel.isTextBased() || !channel.send) {
+      logger.warn('Canal de boas-vindas não encontrado ou inválido.');
+      return;
+    }
 
     const message = formatMessage(
       welcome.message || 'Bem-vindo(a), {user}, ao servidor {server}!',
@@ -28,29 +33,16 @@ async function sendWelcome(member) {
     );
 
     const embed = new EmbedBuilder()
-      .setColor(0x242424)
+      .setColor(0xFFFFFF)
       .setTitle('Bem-vindo(a)!')
       .setDescription(message)
       .setThumbnail(member.user.displayAvatarURL({ size: 256 }))
-      .addFields({
-        name: 'Membro nº',
-        value: String(member.guild.memberCount),
-        inline: true
-      })
-      .setTimestamp()
-      .setFooter({ text: 'Zyphor Bot • Boas-vindas' });
+      .setFooter({ text: `Membro nº ${member.guild.memberCount}` })
+      .setTimestamp();
 
-    await channel.send({
-      embeds: [embed],
-      allowedMentions: {
-        users: [member.id]
-      }
-    });
-
-    return true;
+    await channel.send({ embeds: [embed] });
   } catch (error) {
-    console.error('[Zyphor Welcome] Erro ao enviar boas-vindas:', error);
-    return false;
+    logger.error('Erro ao enviar boas-vindas:', error.message || error);
   }
 }
 
@@ -59,36 +51,36 @@ async function sendGoodbye(member) {
     const config = getGuildConfig(member.guild.id);
     const goodbye = config.goodbye;
 
-    if (!goodbye?.enabled || !goodbye.channelId) return false;
+    if (!goodbye?.enabled || !goodbye.channelId) return;
 
     const channel = await member.guild.channels
       .fetch(goodbye.channelId)
       .catch(() => null);
 
-    if (!channel?.isTextBased() || !channel.send) return false;
+    if (!channel || !channel.isTextBased() || !channel.send) {
+      logger.warn('Canal de despedida não encontrado ou inválido.');
+      return;
+    }
 
     const message = formatMessage(
-      goodbye.message || 'Até mais, {username}! Você saiu de {server}.',
+      goodbye.message || 'Até logo, {user}! Obrigado por participar de {server}.',
       member
     );
 
     const embed = new EmbedBuilder()
-      .setColor(0x424242)
-      .setTitle('Até mais!')
+      .setColor(0x808080)
+      .setTitle('Membro saiu')
       .setDescription(message)
-      .setTimestamp()
-      .setFooter({ text: 'Zyphor Bot • Saída de membros' });
+      .setThumbnail(member.user.displayAvatarURL({ size: 256 }))
+      .setTimestamp();
 
     await channel.send({ embeds: [embed] });
-    return true;
   } catch (error) {
-    console.error('[Zyphor Welcome] Erro ao enviar despedida:', error);
-    return false;
+    logger.error('Erro ao enviar despedida:', error.message || error);
   }
 }
 
 module.exports = {
   sendWelcome,
-  sendGoodbye,
-  formatMessage
+  sendGoodbye
 };
