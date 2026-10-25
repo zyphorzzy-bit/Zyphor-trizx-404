@@ -1,3 +1,4 @@
+
 const fs = require('fs');
 const path = require('path');
 
@@ -10,6 +11,12 @@ const DEFAULT_GUILD_CONFIG = {
     enabled: false,
     channelId: null,
     message: 'Bem-vindo(a), {user}, ao servidor {server}!'
+  },
+
+  goodbye: {
+    enabled: false,
+    channelId: null,
+    message: 'Até logo, {user}! Obrigado por participar de {server}.'
   },
 
   logs: {
