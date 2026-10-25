@@ -1,58 +1,60 @@
+
 const { Events, AuditLogEvent } = require('discord.js');
 
 const { getGuildConfig } = require('../utils/storage');
 const { sendSecurityLog } = require('../systems/securityLogs');
+const logger = require('../utils/logger');
+
+const ACTION_NAMES = {
+  [AuditLogEvent.ChannelDelete]: 'Canal excluído',
+  [AuditLogEvent.RoleDelete]: 'Cargo excluído',
+  [AuditLogEvent.MemberBanAdd]: 'Membro banido',
+  [AuditLogEvent.WebhookCreate]: 'Webhook criado',
+  [AuditLogEvent.WebhookDelete]: 'Webhook excluído',
+  [AuditLogEvent.BotAdd]: 'Bot adicionado'
+};
+
+const DESTRUCTIVE_ACTIONS = new Set([
+  AuditLogEvent.ChannelDelete,
+  AuditLogEvent.RoleDelete,
+  AuditLogEvent.MemberBanAdd,
+  AuditLogEvent.WebhookDelete
+]);
 
 module.exports = {
   name: Events.GuildAuditLogEntryCreate,
 
-  async execute(entry, guild) {
+  async execute(entry, client) {
     try {
+      const guild = entry.guild;
+      if (!guild) return;
+
       const config = getGuildConfig(guild.id);
-      const security = config.security;
 
-      if (!security?.enabled) return;
+      if (!config.security?.enabled) return;
 
-      const destructiveActions = [
-        AuditLogEvent.ChannelDelete,
-        AuditLogEvent.RoleDelete,
-        AuditLogEvent.MemberBanAdd,
-        AuditLogEvent.WebhookCreate,
-        AuditLogEvent.WebhookDelete,
-        AuditLogEvent.BotAdd
-      ];
+      const actionName = ACTION_NAMES[entry.action];
+      if (!actionName) return;
 
-      if (!destructiveActions.includes(entry.action)) return;
-
-      const executorId = entry.executorId;
       const executor = entry.executor;
       const target = entry.target;
 
-      const actionNames = {
-        [AuditLogEvent.ChannelDelete]: 'Canal excluído',
-        [AuditLogEvent.RoleDelete]: 'Cargo excluído',
-        [AuditLogEvent.MemberBanAdd]: 'Membro banido',
-        [AuditLogEvent.WebhookCreate]: 'Webhook criado',
-        [AuditLogEvent.WebhookDelete]: 'Webhook excluído',
-        [AuditLogEvent.BotAdd]: 'Bot adicionado'
-      };
-
-      const actionName =
-        actionNames[entry.action] || 'Ação administrativa';
-
-      const isDestructive =
-        entry.action === AuditLogEvent.ChannelDelete ||
-        entry.action === AuditLogEvent.RoleDelete ||
-        entry.action === AuditLogEvent.MemberBanAdd ||
-        entry.action === AuditLogEvent.WebhookDelete;
+      const targetName =
+        target?.name ||
+        target?.tag ||
+        target?.username ||
+        target?.id ||
+        'Não identificado';
 
       await sendSecurityLog(guild, {
         title: `🛡️ ${actionName}`,
         description:
           `Uma ação administrativa foi registrada no servidor **${guild.name}**.`,
-        type: isDestructive ? 'warning' : 'info',
+        type: DESTRUCTIVE_ACTIONS.has(entry.action)
+          ? 'warning'
+          : 'info',
         user: executor || null,
-        target: target?.name || target?.tag || target?.id || 'Não identificado',
+        target: targetName,
         fields: [
           {
             name: 'Ação registrada',
@@ -60,20 +62,36 @@ module.exports = {
             inline: true
           },
           {
-            name: 'Identificação do registro',
+            name: 'Responsável',
+            value: executor
+              ? `${executor.tag || executor.username} (${executor.id})`
+              : 'Não identificado',
+            inline: false
+          },
+          {
+            name: 'ID do registro',
             value: String(entry.id),
-            inline: true
+            inline: false
+          },
+          {
+            name: 'Proteção',
+            value:
+              'Ação registrada para auditoria. Nenhuma punição automática foi aplicada.',
+            inline: false
           }
         ]
       });
 
-      // A detecção de eventos não aplica punições automaticamente.
-      // Isso evita punir administradores por ações legítimas.
-      void executorId;
+      logger.info('Ação de auditoria registrada', {
+        guildId: guild.id,
+        action: actionName,
+        executorId: entry.executorId || null,
+        auditEntryId: entry.id
+      });
     } catch (error) {
-      console.error(
-        '[Zyphor Security] Erro ao analisar registro de auditoria:',
-        error
+      logger.error(
+        'Erro ao analisar registro de auditoria',
+        error.message
       );
     }
   }
