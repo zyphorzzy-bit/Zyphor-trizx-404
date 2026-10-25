@@ -1,16 +1,22 @@
+
 const { Events, EmbedBuilder } = require('discord.js');
 
 const { getGuildConfig } = require('../utils/storage');
 const { sendSecurityLog } = require('../systems/securityLogs');
+const { sendWelcome } = require('../systems/welcome');
+const { assignAutoRoles } = require('../systems/autorole');
+const logger = require('../utils/logger');
 
 module.exports = {
   name: Events.GuildMemberAdd,
 
   async execute(member) {
     try {
+      if (!member.guild) return;
+
       const config = getGuildConfig(member.guild.id);
 
-      // Registro de entrada de membros.
+      // 1. Registrar a entrada do membro.
       const memberChannelId = config.logs?.memberChannelId;
 
       if (memberChannelId) {
@@ -30,7 +36,7 @@ module.exports = {
                 inline: true
               },
               {
-                name: 'ID interno do Discord',
+                name: 'ID do Discord',
                 value: member.id,
                 inline: true
               }
@@ -42,7 +48,7 @@ module.exports = {
         }
       }
 
-      // Alerta do Anti-Bots.
+      // 2. Alertar sobre a entrada de outro bot.
       if (member.user.bot && config.security?.antiBots?.enabled) {
         await sendSecurityLog(member.guild, {
           title: '🤖 Novo bot detectado',
@@ -53,17 +59,31 @@ module.exports = {
           fields: [
             {
               name: 'Ação automática',
-              value: 'Alerta enviado para a equipe. Nenhuma punição automática foi aplicada.'
+              value: 'Alerta enviado à equipe. Nenhuma punição automática foi aplicada.'
             }
           ]
         });
       }
 
-      // Futuramente: sistema de boas-vindas e cargos automáticos.
+      // 3. Aplicar cargos automáticos apenas a membros humanos.
+      if (!member.user.bot) {
+        try {
+          await assignAutoRoles(member);
+        } catch (error) {
+          logger.error('Erro ao atribuir cargos automáticos', error.message);
+        }
+
+        // 4. Enviar a mensagem de boas-vindas.
+        try {
+          await sendWelcome(member);
+        } catch (error) {
+          logger.error('Erro ao enviar boas-vindas', error.message);
+        }
+      }
     } catch (error) {
-      console.error(
-        '[Zyphor] Erro ao processar entrada de membro:',
-        error
+      logger.error(
+        'Erro ao processar entrada de membro',
+        error.message
       );
     }
   }
