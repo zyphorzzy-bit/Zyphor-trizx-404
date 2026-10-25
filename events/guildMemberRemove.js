@@ -1,6 +1,5 @@
 
 const { Events, EmbedBuilder } = require('discord.js');
-
 const { getGuildConfig } = require('../utils/storage');
 const { sendSecurityLog } = require('../systems/securityLogs');
 const { sendGoodbye } = require('../systems/welcome');
@@ -11,57 +10,51 @@ module.exports = {
 
   async execute(member) {
     try {
-      if (!member.guild) return;
+      if (!member?.guild || !member.user) return;
 
       const guild = member.guild;
       const config = getGuildConfig(guild.id);
-      const user = member.user;
-
-      // 1. Registro de saída.
       const channelId = config.logs?.memberChannelId;
 
+      // Registrar a saída do membro.
       if (channelId) {
         const channel = await guild.channels
           .fetch(channelId)
           .catch(() => null);
 
-        if (channel?.isTextBased()) {
+        if (channel?.isTextBased() && channel.send) {
           const embed = new EmbedBuilder()
             .setColor(0xED4245)
-            .setTitle('📤 Membro saiu')
-            .setDescription(
-              `${user?.tag || 'Usuário desconhecido'} saiu do servidor.`
-            )
+            .setTitle('Membro saiu')
+            .setDescription(`${member.user.tag} saiu do servidor.`)
             .addFields({
-              name: 'Conta',
-              value: user ? `${user}` : 'Não disponível',
-              inline: true
+              name: 'ID do Discord',
+              value: member.id
             })
-            .setTimestamp()
-            .setFooter({
-              text: 'Zyphor Bot • Registro de membros'
-            });
+            .setThumbnail(member.user.displayAvatarURL())
+            .setTimestamp();
 
           await channel.send({ embeds: [embed] });
         }
       }
 
-      // 2. Log de segurança.
+      // Registrar a saída nos logs de segurança.
       await sendSecurityLog(guild, {
-        title: 'Membro saiu do servidor',
-        description: `${user?.tag || 'Um membro'} saiu do servidor.`,
-        type: 'info',
-        user: user || null
+        title: 'Saída de membro',
+        description: `${member.user.tag} saiu do servidor.`,
+        type: 'warning',
+        target: `${member.user.tag} (${member.id})`
       });
 
-      // 3. Mensagem de despedida, se configurada.
-      try {
+      // Enviar despedida, se estiver configurada.
+      if (!member.user.bot) {
         await sendGoodbye(member);
-      } catch (error) {
-        logger.error('Erro ao enviar mensagem de despedida', error.message);
       }
     } catch (error) {
-      logger.error('Erro ao registrar saída de membro', error.message);
+      logger.error(
+        'Erro ao processar saída de membro',
+        error.message || error
+      );
     }
   }
 };
