@@ -1,16 +1,13 @@
 
 require('dotenv').config();
 
-const fs = require('node:fs');
-const path = require('node:path');
-
 const {
   Client,
   GatewayIntentBits,
   Collection,
   Events,
-  ActivityType,
-  MessageFlags
+  REST,
+  Routes
 } = require('discord.js');
 
 const { loadCommands } = require('./handlers/commandHandler');
@@ -18,6 +15,8 @@ const { handleButton } = require('./handlers/buttonHandler');
 const { handleSelectMenu } = require('./handlers/selectMenuHandler');
 const { handleModal } = require('./handlers/modalHandler');
 const logger = require('./utils/logger');
+
+const TEST_GUILD_ID = '1550345798766567527';
 
 const client = new Client({
   intents: [
@@ -31,75 +30,49 @@ const client = new Client({
 
 client.commands = new Collection();
 
-function loadEvents() {
-  const eventsPath = path.join(__dirname, 'events');
+loadCommands(client);
 
-  if (!fs.existsSync(eventsPath)) {
-    logger.warn('A pasta events não foi encontrada.');
-    return;
-  }
-
-  const files = fs.readdirSync(eventsPath)
-    .filter(file => file.endsWith('.js'));
-
-  for (const file of files) {
-    try {
-      const filePath = path.join(eventsPath, file);
-      delete require.cache[require.resolve(filePath)];
-
-      const event = require(filePath);
-
-      if (!event.name || typeof event.execute !== 'function') {
-        logger.warn(`Evento ignorado por formato inválido: ${file}`);
-        continue;
-      }
-
-      // Estes dois eventos são tratados neste arquivo.
-      if (
-        event.name === Events.ClientReady ||
-        event.name === Events.InteractionCreate
-      ) {
-        logger.info(`Evento tratado pelo index.js: ${file}`);
-        continue;
-      }
-
-      const execute = (...args) =>
-        event.execute(...args, client);
-
-      if (event.once) {
-        client.once(event.name, execute);
-      } else {
-        client.on(event.name, execute);
-      }
-
-      logger.success(`Evento carregado: ${file}`);
-    } catch (error) {
-      logger.error(`Erro ao carregar o evento ${file}`, error.message);
-    }
-  }
-}
-
-try {
-  loadCommands(client);
-  loadEvents();
-} catch (error) {
-  logger.error('Erro ao preparar comandos ou eventos', error.message);
-}
-
-client.once(Events.ClientReady, readyClient => {
-  logger.success(`Zyphor Bot conectado como ${readyClient.user.tag}`);
+client.once(Events.ClientReady, async readyClient => {
+  logger.info(`Zyphor Bot conectado como ${readyClient.user.tag}`);
 
   readyClient.user.setPresence({
-    activities: [
-      {
-        name: 'Zyphor | /config',
-        type: ActivityType.Watching
-      }
-    ],
+    activities: [{ name: 'Zyphor | /config', type: 3 }],
     status: 'online'
   });
 
-  logger.info('Inicialização concluída.');
+  try {
+    const token = process.env.DISCORD_TOKEN;
+
+    if (!token) {
+      throw new Error('DISCORD_TOKEN não configurado.');
+    }
+
+    const commands = [...readyClient.commands.values()]
+      .filter(command => command.data?.name)
+      .map(command =>
+        typeof command.data.toJSON === 'function'
+          ? command.data.toJSON()
+          : command.data
+      );
+
+    const rest = new REST({ version: '10' }).setToken(token);
+
+    await rest.put(
+      Routes.applicationGuildCommands(
+        readyClient.user.id,
+        TEST_GUILD_ID
+      ),
+      { body: commands }
+    );
+
+    logger.info(
+      `${commands.length} comando(s) registrado(s) no servidor de teste.`
+    );
+  } catch (error) {
+    logger.error('Erro ao registrar comandos slash:', error);
+  }
+
+  console.log('Zyphor Bot está pronto!');
 });
 
 client.on(Events.InteractionCreate, async interaction => {
@@ -109,8 +82,8 @@ client.on(Events.InteractionCreate, async interaction => {
 
       if (!command) {
         await interaction.reply({
-          content: 'Este comando não foi carregado.',
-          flags: MessageFlags.Ephemeral
+          content: 'Este comando não foi encontrado.',
+          ephemeral: true
         });
         return;
       }
@@ -120,63 +93,52 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.isButton()) {
-      const handled = await handleButton(interaction, client);
-      if (handled) return;
+      await handleButton(interaction, client);
+      return;
     }
 
-    const isSelectMenu =
+    if (
       interaction.isStringSelectMenu() ||
       interaction.isChannelSelectMenu() ||
       interaction.isRoleSelectMenu() ||
       interaction.isUserSelectMenu() ||
-      interaction.isMentionableSelectMenu();
-
-    if (isSelectMenu) {
-      const handled = await handleSelectMenu(interaction, client);
-      if (handled) return;
+      interaction.isMentionableSelectMenu()
+    ) {
+      await handleSelectMenu(interaction, client);
+      return;
     }
 
     if (interaction.isModalSubmit()) {
-      const handled = await handleModal(interaction, client);
-      if (handled) return;
+      await handleModal(interaction, client);
     }
   } catch (error) {
-    logger.error('Erro ao processar interação', error.message);
+    logger.error('Erro ao processar interação:', error);
 
     const response = {
       content: 'Ocorreu um erro ao executar essa ação.',
-      flags: MessageFlags.Ephemeral
+      ephemeral: true
     };
 
-    if (interaction.replied || interaction.deferred) {
-      await interaction.followUp(response).catch(() => {});
-    } else {
-      await interaction.reply(response).catch(() => {});
+    if (interaction.isRepliable()) {
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp(response).catch(() => {});
+      } else {
+        await interaction.reply(response).catch(() => {});
+      }
     }
   }
 });
 
 client.on(Events.Error, error => {
-  logger.error('Erro do cliente Discord', error.message);
-});
-
-process.on('unhandledRejection', error => {
-  logger.error(
-    'Promessa rejeitada sem tratamento',
-    error?.message || String(error)
-  );
-});
-
-process.on('uncaughtException', error => {
-  logger.error('Erro inesperado no processo', error.message);
+  logger.error('Erro do cliente Discord:', error);
 });
 
 if (!process.env.DISCORD_TOKEN) {
-  logger.error(
-    'DISCORD_TOKEN não configurado. O bot não será iniciado.'
-  );
-} else {
-  client.login(process.env.DISCORD_TOKEN).catch(error => {
-    logger.error('Não foi possível conectar ao Discord', error.message);
-  });
+  logger.error('DISCORD_TOKEN não foi configurado nas variáveis de ambiente.');
+  process.exit(1);
 }
+
+client.login(process.env.DISCORD_TOKEN).catch(error => {
+  logger.error('Não foi possível conectar ao Discord:', error);
+  process.exitCode = 1;
+});
