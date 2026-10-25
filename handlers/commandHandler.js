@@ -1,6 +1,7 @@
 
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
+
 const logger = require('../utils/logger');
 
 function loadCommands(client) {
@@ -14,6 +15,8 @@ function loadCommands(client) {
   const files = fs.readdirSync(commandsPath)
     .filter(file => file.endsWith('.js'));
 
+  let loaded = 0;
+
   for (const file of files) {
     const filePath = path.join(commandsPath, file);
 
@@ -22,17 +25,35 @@ function loadCommands(client) {
 
       const command = require(filePath);
 
-      if (!command.data || !command.execute) {
-        logger.warn(`Comando ignorado: ${file}`);
+      if (
+        !command.data ||
+        typeof command.data.name !== 'string' ||
+        typeof command.execute !== 'function'
+      ) {
+        logger.warn(`Comando ignorado por formato inválido: ${file}`);
         continue;
       }
 
-      client.commands.set(command.data.name, command);
-      logger.info(`Comando carregado: ${command.data.name}`);
+      const commandName = command.data.name;
+
+      if (client.commands.has(commandName)) {
+        logger.warn(`Comando duplicado ignorado: ${commandName}`);
+        continue;
+      }
+
+      client.commands.set(commandName, command);
+      loaded++;
+
+      logger.success(`Comando preparado: /${commandName}`);
     } catch (error) {
-      logger.error(`Erro ao carregar ${file}`, error);
+      logger.error(
+        `Erro ao carregar o comando ${file}`,
+        error.message
+      );
     }
   }
+
+  logger.info(`${loaded} comando(s) preparado(s).`);
 }
 
 module.exports = { loadCommands };
