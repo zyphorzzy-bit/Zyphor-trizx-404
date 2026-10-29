@@ -1,1 +1,13 @@
 
+{
+  "name": "zyphor-bot",
+  "version": "1.0.0",
+  "description": "ZYPhor Bot - Sistema completo de gerenciamento para Discord",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.25.1"
+  }
+}
